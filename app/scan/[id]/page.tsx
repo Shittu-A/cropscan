@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { Scan } from '@/lib/supabase/types'
+import CopyButton from './CopyButton'
 
 // ============================================
 // TYPES
@@ -200,14 +201,7 @@ export default async function ScanResultPage({ params }: ScanResultPageProps) {
                 value={`${process.env.NEXT_PUBLIC_APP_URL || ''}/share/${typedScan.share_token}`}
                 className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600"
               />
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/share/${typedScan.share_token}`)
-                }}
-                className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700"
-              >
-                Copy
-              </button>
+              <CopyButton shareUrl={`${process.env.NEXT_PUBLIC_APP_URL || ''}/share/${typedScan.share_token}`} />
             </div>
           </div>
         )}
