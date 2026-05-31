@@ -8,7 +8,7 @@ const hf = new HfInference(process.env.HF_API_KEY)
 
 const MODEL_ID = 'linkanjarad/mobilenet_v2_1.0_224-plant-disease-identification'
 
-async function classifyWithRetry(data: ArrayBuffer, retries = 3): Promise<ReturnType<typeof hf.imageClassification>> {
+async function classifyWithRetry(data: Blob, retries = 3): Promise<ReturnType<typeof hf.imageClassification>> {
   for (let i = 0; i < retries; i++) {
     try {
       return await hf.imageClassification({ model: MODEL_ID, data })
@@ -68,11 +68,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Convert file to ArrayBuffer for HF API
+    // Convert file to Blob so HF SDK gets the correct content type
     const buffer = await imageFile.arrayBuffer()
+    const blob = new Blob([buffer], { type: imageFile.type })
 
     // Call Hugging Face API (with retry for cold starts)
-    const predictions = await classifyWithRetry(buffer)
+    const predictions = await classifyWithRetry(blob)
 
     // Sort by confidence (highest first)
     const sortedPredictions = predictions.sort((a, b) => b.score - a.score)
