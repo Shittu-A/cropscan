@@ -3,6 +3,51 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useRef, useCallback } from 'react'
+
+// Compress image to JPEG under maxSizeBytes using a canvas
+async function compressImage(file: File, maxSizeBytes = 4 * 1024 * 1024): Promise<File> {
+  if (file.size <= maxSizeBytes) return file
+
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = document.createElement('canvas')
+      let { width, height } = img
+
+      // Scale down if very large
+      const MAX_DIM = 1920
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, width, height)
+
+      // Try decreasing quality until it fits
+      let quality = 0.85
+      const tryCompress = () => {
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Canvas compression failed'))
+          if (blob.size <= maxSizeBytes || quality <= 0.3) {
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+          } else {
+            quality -= 0.1
+            tryCompress()
+          }
+        }, 'image/jpeg', quality)
+      }
+      tryCompress()
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')) }
+    img.src = url
+  })
+}
 import Link from 'next/link'
 import { DetectionResult } from '@/app/api/detect/route'
 import { createClient } from '@/lib/supabase/client'
@@ -154,9 +199,10 @@ export default function ScanPage() {
     setState(prev => ({ ...prev, step: 'scanning', error: null }))
 
     try {
-      // Step 1: Detect disease
+      // Step 1: Detect disease (compress first to stay under server body limit)
+      const compressedFile = await compressImage(state.imageFile)
       const formData = new FormData()
-      formData.append('image', state.imageFile)
+      formData.append('image', compressedFile)
 
       const detectResponse = await fetch('/api/detect', {
         method: 'POST',
@@ -164,8 +210,17 @@ export default function ScanPage() {
       })
 
       if (!detectResponse.ok) {
-        const errorData = await detectResponse.json()
-        throw new Error(errorData.error || 'Detection failed')
+        let errorMsg = 'Detection failed'
+        const contentType = detectResponse.headers.get('content-type') ?? ''
+        if (contentType.includes('application/json')) {
+          const errorData = await detectResponse.json()
+          errorMsg = errorData.error || errorMsg
+        } else {
+          const text = await detectResponse.text()
+          if (detectResponse.status === 413) errorMsg = 'Image is too large. Please try a smaller photo.'
+          else errorMsg = text || errorMsg
+        }
+        throw new Error(errorMsg)
       }
 
       const result: DetectionResult = await detectResponse.json()
